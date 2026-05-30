@@ -44,18 +44,28 @@ def _phase2_detail_outputs(
     selected_log = next(item for item in candidates if str(item["seed"]) == selected_seed)
     log_data = _load_json(selected_log["log_path"])
     seed_result_df = _load_phase2_seed_results(phase2_root, rule_id, selected_seed)
-    seed_result_row = seed_result_df.loc[seed_result_df["community_name"] == community_name]
-    seed_result_path = seed_result_row.iloc[0]["community_result_path"] if not seed_result_row.empty else None
+    seed_result_row = seed_result_df.loc[seed_result_df["community_name"] == community_name] if "community_name" in seed_result_df.columns else pd.DataFrame()
+    seed_result_path = seed_result_row.iloc[0]["community_result_path"] if not seed_result_row.empty and "community_result_path" in seed_result_row.columns else selected_log.get("community_result_path")
     round_df = _build_round_dataframe(log_data)
     round_choices = round_df["轮次"].astype(int).astype(str).tolist() if not round_df.empty else []
     selected_round = round_choices[-1] if round_choices else None
     resident_df = _build_resident_round_dataframe(log_data, _safe_int(selected_round, 0))
 
     raw_rows = _load_phase2_community_results(phase2_root)
-    community_rows = raw_rows[
-        (raw_rows["rule_id"] == rule_id) & (raw_rows["community_name"].astype(str).str.strip() == community_name)
-    ]
-    community_rows = community_rows.sort_values("seed")
+    if raw_rows.empty or "community_name" not in raw_rows.columns:
+        community_rows = pd.DataFrame()
+    else:
+        annotated_rows = _annotate_phase2_policy_groups(raw_rows)
+        filter_col = "policy_rule_id" if "policy_rule_id" in annotated_rows.columns else "rule_id"
+        if filter_col in annotated_rows.columns:
+            community_rows = annotated_rows[
+                (annotated_rows[filter_col].astype(str) == str(rule_id))
+                & (annotated_rows["community_name"].astype(str).str.strip() == community_name)
+            ]
+        else:
+            community_rows = pd.DataFrame()
+        if not community_rows.empty and "seed" in community_rows.columns:
+            community_rows = community_rows.sort_values("seed")
 
     detail_md = _build_log_summary_markdown(
         log_data,

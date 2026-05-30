@@ -586,16 +586,20 @@ def _build_phase2_community_page(
             {"label": "Termination Reason", "value": _humanize_identifier(_log_json.get("termination_reason")), "hint": "Why the negotiation stopped"},
         ]
     )
-    result_panel_html = _key_value_panel_html(
-        "Current Community Result",
-        _phase2_result_pairs(selected_seed_row, _log_json, selected_seed, len(log_index.get(selected_community or "", []))),
+    current_result_items = _phase2_result_pairs(
+        selected_seed_row,
+        _log_json,
+        selected_seed,
+        len(log_index.get(selected_community or "", [])),
+        phase2_root,
     )
+    result_panel_html = _key_value_panel_html("Current Community Result", current_result_items)
     body = _build_interactive_detail_page(
         page_title=selected_community or "Community Detail",
-        page_description=f"{selected_rule_display} · Seed {selected_seed or 'N/A'} · Review the negotiation outcome, playback the round-by-round evolution, and inspect resident-level decisions.",
+        page_description=f"{selected_rule_display} · Seed {selected_seed or 'Unavailable'} · Review the negotiation outcome, playback the round-by-round evolution, and inspect resident-level decisions.",
         header_chips=[
             f"Rule: {_phase2_rule_content_text(selected_rule_row)}",
-            f"Seed: {selected_seed or 'N/A'}",
+            f"Seed: {selected_seed or 'Unavailable'}",
             f"Outcome: {_humanize_identifier(_log_json.get('outcome'))}",
         ],
         back_url=back_url,

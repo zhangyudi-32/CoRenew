@@ -573,19 +573,33 @@ def _stats_cards_html(cards: list[dict[str, str]]) -> str:
     return f'<div class="stats-grid">{"".join(chunks)}</div>'
 
 
+def _display_panel_value(value: Any) -> str:
+    if value is None:
+        return "N/A"
+    try:
+        if pd.isna(value):
+            return "N/A"
+    except Exception:
+        pass
+    text = str(value).strip()
+    if not text or text.lower() in {"nan", "none", "null", "n/a", "na", "--"}:
+        return "N/A"
+    return html.escape(text)
+
+
 def _key_value_panel_html(title: str, items: list[tuple[str, str]]) -> str:
     rows = []
     for label, value in items:
         rows.append(
             f"""
             <div class="kv-item">
-              <div class="kv-label">{label}</div>
-              <div class="kv-value">{value}</div>
+              <div class="kv-label">{html.escape(str(label))}</div>
+              <div class="kv-value">{_display_panel_value(value)}</div>
             </div>
             """
         )
     return (
-        f'<div class="section-head compact"><div class="section-title">{title}</div></div>'
+        f'<div class="section-head compact"><div class="section-title">{html.escape(str(title))}</div></div>'
         f'<div class="kv-grid">{"".join(rows)}</div>'
     )
 
@@ -1199,18 +1213,69 @@ def _build_interactive_detail_page(
     """
 
 
-def _phase2_result_pairs(row: pd.Series | None, log_data: dict[str, Any], seed: str | None, sample_count: int) -> list[tuple[str, str]]:
-    final_metrics = log_data.get("final_metrics", {})
+def _phase2_result_pairs(row: pd.Series | None, log_data: dict[str, Any], seed: str | None, sample_count: int, phase2_root: str | None = None) -> list[tuple[str, str]]:
+    final_metrics = log_data.get("final_metrics", {}) or {}
+    community_info = log_data.get("community_info", {}) or {}
+    computed_objectives: dict[str, Any] = {}
+    try:
+        root_obj = Path(_resolve_app_path(str(phase2_root or DEFAULT_PHASE2_ROOT)))
+        log_path_value = row.get("log_path") if row is not None and "log_path" in row else ""
+        log_path_obj = Path(str(log_path_value)) if log_path_value else None
+        if log_path_obj is not None and not log_path_obj.is_absolute():
+            candidate = root_obj / log_path_obj
+            log_path_obj = candidate if candidate.exists() else log_path_obj
+        if log_path_obj is None or not log_path_obj.exists():
+            # The detail page already has the parsed raw log. Compute objectives anyway;
+            # log_path is only needed for locating config/agent metadata, not for the
+            # final-round resident decisions stored in the log itself.
+            log_path_obj = root_obj
+            run_cfg = {}
+        else:
+            run_cfg = _config_for_log_path(log_path_obj, root_obj)
+        computed_objectives = _phase2_compute_objectives_from_log(log_data, log_path_obj, root_obj, run_cfg)
+    except Exception:
+        computed_objectives = {}
+
+    def row_value(column: str, fallback: Any = np.nan) -> Any:
+        if row is not None and column in row:
+            value = row.get(column)
+            try:
+                if not pd.isna(value):
+                    return value
+            except Exception:
+                if value not in (None, ""):
+                    return value
+        if column in computed_objectives:
+            computed_value = computed_objectives.get(column)
+            try:
+                if not pd.isna(computed_value):
+                    return computed_value
+            except Exception:
+                if computed_value not in (None, ""):
+                    return computed_value
+        return fallback
+
+    threshold = row_value("threshold", community_info.get("required_agree_ratio"))
+    is_success = row_value("is_success", np.nan)
+    if pd.isna(_safe_float(is_success, np.nan)):
+        final_agree_ratio = _safe_float(final_metrics.get("final_agree_ratio"), np.nan)
+        threshold_float = _safe_float(threshold, np.nan)
+        is_success = 1.0 if not pd.isna(final_agree_ratio) and not pd.isna(threshold_float) and final_agree_ratio >= threshold_float else (0.0 if not pd.isna(final_agree_ratio) and not pd.isna(threshold_float) else np.nan)
+
+    developer_profit = row_value("developer_profit", final_metrics.get("final_profit"))
+    developer_profit_rate = row_value("developer_profit_rate", final_metrics.get("final_profit_rate"))
+    utility_gini = _safe_float(row_value("utility_gini", np.nan), np.nan)
+
     items = [
-        ("Seed", seed or "N/A"),
-        ("Required Threshold", _format_ratio(row.get("threshold")) if row is not None and "threshold" in row else "N/A"),
-        ("Success", "Yes" if row is not None and _safe_float(row.get("is_success"), 0.0) >= 0.5 else "No"),
-        ("Developer Profit", _format_currency(final_metrics.get("final_profit"))),
-        ("Developer Profit Rate", _format_ratio(final_metrics.get("final_profit_rate"))),
-        ("Resident Mean Utility", _format_currency(row.get("resident_mean_utility")) if row is not None and "resident_mean_utility" in row else "N/A"),
-        ("Utility Gini", f"{_safe_float(row.get('utility_gini'), np.nan):.3f}" if row is not None and not pd.isna(row.get("utility_gini")) else "N/A"),
-        ("Subsidy Total Cost", _format_currency(row.get("subsidy_total_cost")) if row is not None and "subsidy_total_cost" in row else "N/A"),
-        ("Samples In This Community", str(sample_count)),
+        ("Seed", seed or "Auto"),
+        ("Required Threshold", _format_ratio(threshold)),
+        ("Success", "Yes" if _safe_float(is_success, 0.0) >= 0.5 else "No"),
+        ("Developer Profit", _format_currency(developer_profit)),
+        ("Developer Profit Rate", _format_ratio(developer_profit_rate)),
+        ("Resident Mean Utility", _format_currency(row_value("resident_mean_utility", np.nan))),
+        ("Utility Gini", f"{utility_gini:.3f}" if not pd.isna(utility_gini) else "0.000"),
+        ("Subsidy Total Cost", _format_currency(row_value("subsidy_total_cost", np.nan))),
+        ("Samples In This Community", _format_number(sample_count)),
     ]
     return items
 

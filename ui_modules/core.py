@@ -647,7 +647,7 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(value)
 
     text = _strip_str(value)
-    if not text:
+    if not text or text.lower() in {"nan", "none", "null", "n/a", "na", "--"}:
         return default
 
     is_percent = text.endswith("%")
@@ -948,9 +948,10 @@ def _format_ratio(value: Any) -> str:
 
 
 def _format_currency(value: Any) -> str:
-    if value is None or pd.isna(value):
+    numeric = _safe_float(value, np.nan)
+    if pd.isna(numeric):
         return "N/A"
-    return f"{float(value):,.0f}"
+    return f"{numeric:,.0f}"
 
 
 def _format_number(value: Any) -> str:
@@ -964,18 +965,22 @@ def _format_number(value: Any) -> str:
     try:
         numeric = float(value)
     except Exception:
-        return _strip_str(value) or "N/A"
+        text = _strip_str(value)
+        return "N/A" if text.lower() in {"nan", "none", "null", "n/a", "na", "--"} else (text or "N/A")
+    if pd.isna(numeric):
+        return "N/A"
     if numeric.is_integer():
         return f"{int(numeric)}"
     return f"{numeric:.4f}".rstrip("0").rstrip(".")
 
 
 def _format_metric_value(metric: str, value: Any) -> str:
-    if value is None or pd.isna(value):
+    numeric = _safe_float(value, np.nan)
+    if pd.isna(numeric):
         return "N/A"
     if metric in {"final_agree_ratio", "avg_extension_ratio", "avg_subsidy_ratio"}:
-        return _format_ratio(value)
-    return str(value)
+        return _format_ratio(numeric)
+    return _format_number(numeric)
 
 
 def _map_value_series(df: pd.DataFrame, metric: str) -> pd.Series:
@@ -1187,14 +1192,40 @@ def _load_yaml_file(path: Path) -> dict[str, Any]:
     return {}
 
 
+def _phase2_log_run_dir(log_path: Path, root: Path) -> Path:
+    """Return the experiment folder that owns a raw negotiation log."""
+    try:
+        resolved_root = root.resolve()
+        parents = [log_path.parent, *log_path.parents]
+        for parent in parents:
+            if (parent / "ui_run.yaml").exists():
+                return parent.resolve()
+            if parent.resolve() == resolved_root:
+                break
+        try:
+            relative = log_path.resolve().relative_to(resolved_root)
+            if len(relative.parts) > 1:
+                return (resolved_root / relative.parts[0]).resolve()
+        except Exception:
+            pass
+        return resolved_root
+    except Exception:
+        return log_path.parent.resolve()
+
+
+def _phase2_log_has_own_summary_csv(log_path: Path, root: Path) -> bool:
+    run_dir = _phase2_log_run_dir(log_path, root)
+    return (run_dir / "phase2_community_results_by_rule.csv").exists()
+
+
 def _config_for_log_path(log_path: Path, root: Path) -> dict[str, Any]:
     candidates: list[Path] = []
     try:
-        candidates.append(root / "ui_run.yaml")
         for parent in [log_path.parent, *log_path.parents]:
             candidates.append(parent / "ui_run.yaml")
             if parent.resolve() == root.resolve():
                 break
+        candidates.append(root / "ui_run.yaml")
     except Exception:
         candidates.append(root / "ui_run.yaml")
     seen: set[str] = set()
@@ -1251,111 +1282,153 @@ def _read_boundary(boundary_path: str) -> gpd.GeoDataFrame:
     return gdf
 
 
+def _aggregate_phase2_global_from_community(community_df: pd.DataFrame, phase2_root: str | None = None) -> pd.DataFrame:
+    community_df = _annotate_phase2_policy_groups(community_df)
+    if community_df.empty or {"policy_rule_id", "community_name"}.difference(community_df.columns):
+        return pd.DataFrame()
+
+    for column in [
+        "is_success",
+        "utility_gini",
+        "low_income_mean_utility",
+        "subsidy_total_cost",
+        "extension_ratio_final",
+        "cash_subsidy_ratio_final",
+        "policy_extension_cap",
+        "policy_subsidy_cap",
+        "seed",
+        "source_rule_id",
+        "rule_content",
+        "planner_soft_policy_text",
+    ]:
+        if column not in community_df.columns:
+            community_df[column] = np.nan
+
+    pair_means = (
+        community_df.groupby(["policy_rule_id", "community_name"], as_index=False, dropna=False)
+        .agg(
+            sample_count=("seed", "count"),
+            source_rule_count=("source_rule_id", "nunique"),
+            source_rule_ids=("source_rule_id", lambda values: ",".join(sorted({str(v) for v in values if str(v) and str(v) != "nan"}))),
+            rule_content=("rule_content", lambda values: next((_strip_str(v) for v in values if _strip_str(v)), "")),
+            planner_soft_policy_text=("planner_soft_policy_text", lambda values: next((_strip_str(v) for v in values if _strip_str(v)), "")),
+            is_success=("is_success", "mean"),
+            utility_gini=("utility_gini", "mean"),
+            low_income_mean_utility=("low_income_mean_utility", "mean"),
+            subsidy_total_cost=("subsidy_total_cost", "mean"),
+            extension_ratio_final=("extension_ratio_final", "mean"),
+            cash_subsidy_ratio_final=("cash_subsidy_ratio_final", "mean"),
+            policy_extension_cap=("policy_extension_cap", "mean"),
+            policy_subsidy_cap=("policy_subsidy_cap", "mean"),
+        )
+    )
+    grouped = (
+        pair_means.groupby("policy_rule_id", as_index=False, dropna=False)
+        .agg(
+            community_count=("community_name", "nunique"),
+            run_count=("sample_count", "sum"),
+            source_rule_count=("source_rule_count", "sum"),
+            rule_content=("rule_content", lambda values: next((_strip_str(v) for v in values if _strip_str(v)), "")),
+            planner_soft_policy_text=("planner_soft_policy_text", lambda values: next((_strip_str(v) for v in values if _strip_str(v)), "")),
+            success_count=("is_success", "sum"),
+            success_rate=("is_success", "mean"),
+            avg_utility_gini=("utility_gini", "mean"),
+            avg_low_income_mean_utility=("low_income_mean_utility", "mean"),
+            total_subsidy_cost=("subsidy_total_cost", "sum"),
+            extension_cap=("policy_extension_cap", "mean"),
+            subsidy_cap=("policy_subsidy_cap", "mean"),
+        )
+        .rename(columns={"policy_rule_id": "rule_id"})
+        .sort_values(["success_count", "success_rate", "extension_cap", "subsidy_cap"], ascending=[False, False, True, True])
+        .reset_index(drop=True)
+    )
+    grouped = _apply_phase2_rule_caps(grouped, phase2_root) if phase2_root else grouped
+    computed_rule_content = grouped.apply(lambda row: _policy_rule_content(row["extension_cap"], row["subsidy_cap"]), axis=1)
+    if "rule_content" in grouped.columns:
+        existing_rule_content = grouped["rule_content"].map(_strip_str)
+        grouped["rule_content"] = existing_rule_content.where(existing_rule_content.astype(bool), computed_rule_content)
+    else:
+        grouped["rule_content"] = computed_rule_content
+    return grouped
+
+
+def _prepare_phase2_global_csv(df: pd.DataFrame, phase2_root: str) -> pd.DataFrame:
+    if df.empty:
+        return df
+    df = df.copy()
+    for column in ["extension_cap", "subsidy_cap"]:
+        if column in df.columns:
+            df[column] = pd.to_numeric(df[column], errors="coerce")
+    df = _apply_phase2_rule_caps(df, phase2_root)
+    if "community_count" not in df.columns:
+        if "total_communities" in df.columns:
+            df["community_count"] = pd.to_numeric(df["total_communities"], errors="coerce")
+        elif "sampled_communities" in df.columns:
+            df["community_count"] = pd.to_numeric(df["sampled_communities"], errors="coerce")
+        else:
+            df["community_count"] = np.nan
+    if "run_count" not in df.columns:
+        df["run_count"] = np.nan
+    if {"extension_cap", "subsidy_cap"}.issubset(df.columns):
+        computed_rule_content = df.apply(lambda row: _policy_rule_content(row["extension_cap"], row["subsidy_cap"]), axis=1)
+        if "rule_content" in df.columns:
+            existing_rule_content = df["rule_content"].map(_strip_str)
+            df["rule_content"] = existing_rule_content.where(existing_rule_content.astype(bool), computed_rule_content)
+        else:
+            df["rule_content"] = computed_rule_content
+    return df
+
+
 @lru_cache(maxsize=16)
 def _load_phase2_global_results(phase2_root: str) -> pd.DataFrame:
-    df = _read_phase2_csv_files(phase2_root, "phase2_global_rule_results.csv")
-    if not df.empty:
-        for column in ["extension_cap", "subsidy_cap"]:
-            if column in df.columns:
-                df[column] = pd.to_numeric(df[column], errors="coerce")
-        df = _apply_phase2_rule_caps(df, phase2_root)
-        if "community_count" not in df.columns:
-            if "total_communities" in df.columns:
-                df["community_count"] = pd.to_numeric(df["total_communities"], errors="coerce")
-            elif "sampled_communities" in df.columns:
-                df["community_count"] = pd.to_numeric(df["sampled_communities"], errors="coerce")
-            else:
-                df["community_count"] = np.nan
-        if "run_count" not in df.columns:
-            df["run_count"] = np.nan
-        if {"extension_cap", "subsidy_cap"}.issubset(df.columns):
-            df["rule_content"] = df.apply(lambda row: _policy_rule_content(row["extension_cap"], row["subsidy_cap"]), axis=1)
-        sort_columns = [
-            column
-            for column in ["success_count", "avg_utility_gini", "avg_low_income_mean_utility", "total_subsidy_cost"]
-            if column in df.columns
-        ]
-        if sort_columns:
-            ascending = [False, True, False, True][: len(sort_columns)]
-            df = df.sort_values(sort_columns, ascending=ascending)
-        return df.reset_index(drop=True)
-    community_df = _annotate_phase2_policy_groups(_load_phase2_community_results(phase2_root))
-    if not community_df.empty and {"policy_rule_id", "community_name"}.issubset(community_df.columns):
+    csv_df = _prepare_phase2_global_csv(_read_phase2_csv_files(phase2_root, "phase2_global_rule_results.csv"), phase2_root)
+
+    log_df = _load_negotiation_logs_as_phase2_results(phase2_root)
+    if not log_df.empty and "_has_summary_csv" in log_df.columns:
+        log_df = log_df.loc[~log_df["_has_summary_csv"].astype(bool)].copy()
+    log_global_df = _aggregate_phase2_global_from_community(log_df, phase2_root) if not log_df.empty else pd.DataFrame()
+
+    frames = [frame for frame in [csv_df, log_global_df] if frame is not None and not frame.empty]
+    if not frames:
+        return pd.DataFrame()
+    df = pd.concat(frames, ignore_index=True, sort=False)
+    if "rule_id" in df.columns:
+        df = df.drop_duplicates(subset=["rule_id"], keep="first")
+    sort_columns = [
+        column
+        for column in ["success_count", "avg_utility_gini", "avg_low_income_mean_utility", "total_subsidy_cost"]
+        if column in df.columns
+    ]
+    if sort_columns:
+        ascending = [False, True, False, True][: len(sort_columns)]
+        df = df.sort_values(sort_columns, ascending=ascending)
+    return df.reset_index(drop=True)
 
 
-        for column in [
-            "is_success",
-            "utility_gini",
-            "low_income_mean_utility",
-            "subsidy_total_cost",
-            "extension_ratio_final",
-            "cash_subsidy_ratio_final",
-            "policy_extension_cap",
-            "policy_subsidy_cap",
-            "seed",
-            "source_rule_id",
-            "rule_content",
-            "planner_soft_policy_text",
-        ]:
-            if column not in community_df.columns:
-                community_df[column] = np.nan
-        pair_means = (
-            community_df.groupby(["policy_rule_id", "community_name"], as_index=False)
-            .agg(
-                sample_count=("seed", "count"),
-                source_rule_count=("source_rule_id", "nunique"),
-                source_rule_ids=("source_rule_id", lambda values: ",".join(sorted({str(v) for v in values if str(v) != "nan"}))),
-                rule_content=("rule_content", lambda values: next((_strip_str(v) for v in values if _strip_str(v)), "")),
-                planner_soft_policy_text=("planner_soft_policy_text", lambda values: next((_strip_str(v) for v in values if _strip_str(v)), "")),
-                is_success=("is_success", "mean"),
-                utility_gini=("utility_gini", "mean"),
-                low_income_mean_utility=("low_income_mean_utility", "mean"),
-                subsidy_total_cost=("subsidy_total_cost", "mean"),
-                extension_ratio_final=("extension_ratio_final", "mean"),
-                cash_subsidy_ratio_final=("cash_subsidy_ratio_final", "mean"),
-                policy_extension_cap=("policy_extension_cap", "mean"),
-                policy_subsidy_cap=("policy_subsidy_cap", "mean"),
-            )
-        )
-        grouped = (
-            pair_means.groupby("policy_rule_id", as_index=False)
-            .agg(
-                community_count=("community_name", "nunique"),
-                run_count=("sample_count", "sum"),
-                source_rule_count=("source_rule_count", "sum"),
-                rule_content=("rule_content", lambda values: next((_strip_str(v) for v in values if _strip_str(v)), "")),
-                planner_soft_policy_text=("planner_soft_policy_text", lambda values: next((_strip_str(v) for v in values if _strip_str(v)), "")),
-                success_count=("is_success", "sum"),
-                success_rate=("is_success", "mean"),
-                avg_utility_gini=("utility_gini", "mean"),
-                avg_low_income_mean_utility=("low_income_mean_utility", "mean"),
-                total_subsidy_cost=("subsidy_total_cost", "sum"),
-                extension_cap=("policy_extension_cap", "mean"),
-                subsidy_cap=("policy_subsidy_cap", "mean"),
-            )
-            .rename(columns={"policy_rule_id": "rule_id"})
-            .sort_values(["success_count", "success_rate", "extension_cap", "subsidy_cap"], ascending=[False, False, True, True])
-            .reset_index(drop=True)
-        )
-        grouped = _apply_phase2_rule_caps(grouped, phase2_root)
-        computed_rule_content = grouped.apply(lambda row: _policy_rule_content(row["extension_cap"], row["subsidy_cap"]), axis=1)
-        if "rule_content" in grouped.columns:
-            existing_rule_content = grouped["rule_content"].map(_strip_str)
-            grouped["rule_content"] = existing_rule_content.where(existing_rule_content.astype(bool), computed_rule_content)
-        else:
-            grouped["rule_content"] = computed_rule_content
-        return grouped
-    return pd.DataFrame()
+def _load_phase2_community_csv_results(phase2_root: str) -> pd.DataFrame:
+    df = _read_phase2_csv_files(phase2_root, "phase2_community_results_by_rule.csv")
+    if df.empty:
+        return pd.DataFrame()
+    df = df.copy()
+    if "community_name" in df.columns:
+        df["community_name"] = df["community_name"].astype(str).str.strip().map(_normalize_community_name)
+    df["_source_kind"] = "summary_csv"
+    return df
 
 
 @lru_cache(maxsize=16)
 def _load_phase2_community_results(phase2_root: str) -> pd.DataFrame:
-    df = _read_phase2_csv_files(phase2_root, "phase2_community_results_by_rule.csv")
-    if df.empty:
-        return _load_negotiation_logs_as_phase2_results(phase2_root)
-    if "community_name" in df.columns:
-        df["community_name"] = df["community_name"].astype(str).str.strip().map(_normalize_community_name)
-    return df
+    csv_df = _load_phase2_community_csv_results(phase2_root)
+    log_df = _load_negotiation_logs_as_phase2_results(phase2_root)
+    if not log_df.empty and "_has_summary_csv" in log_df.columns:
+        # If a run already provides a summary CSV, keep that CSV as the aggregate source
+        # and reserve its raw logs for click-through negotiation details. This prevents
+        # summary rows and raw log rows from double-counting the same experiment.
+        log_df = log_df.loc[~log_df["_has_summary_csv"].astype(bool)].copy()
+    frames = [frame for frame in [csv_df, log_df] if frame is not None and not frame.empty]
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True, sort=False)
 
 
 def _rule_id_from_log_path(log_path: Path) -> str:
@@ -1374,6 +1447,238 @@ def _seed_from_log_path(log_path: Path) -> str:
     return match.group(1) if match else str(int(log_path.stat().st_mtime))
 
 
+
+def _phase2_gini(values: Any) -> float:
+    arr = pd.to_numeric(pd.Series(list(values) if isinstance(values, (list, tuple, np.ndarray, pd.Series)) else []), errors="coerce").dropna().to_numpy(dtype=float)
+    if arr.size == 0:
+        return np.nan
+    arr = np.maximum(arr, 0.0)
+    total = float(arr.sum())
+    if total <= 0:
+        return 0.0
+    arr.sort()
+    n = arr.size
+    return float((2.0 * np.arange(1, n + 1).dot(arr)) / (n * total) - (n + 1.0) / n)
+
+
+@lru_cache(maxsize=16)
+def _phase2_agents_table_for_root(root_str: str) -> pd.DataFrame:
+    root = Path(root_str)
+    candidates: list[Path] = []
+    for base in [root, ROOT]:
+        candidates.extend([
+            base / "data" / "agents_by_community" / "ALL_agents.csv",
+            base / "data" / "agents_official" / "official_agents.csv",
+        ])
+    try:
+        for csv_path in root.rglob("*.csv"):
+            name = csv_path.name.lower()
+            if "agent" in name and csv_path not in candidates:
+                candidates.append(csv_path)
+    except Exception:
+        pass
+
+    frames: list[pd.DataFrame] = []
+    seen: set[str] = set()
+    for path in candidates:
+        try:
+            key = str(path.resolve())
+        except Exception:
+            key = str(path)
+        if key in seen or not path.exists():
+            continue
+        seen.add(key)
+        try:
+            frame = pd.read_csv(path)
+        except Exception:
+            continue
+        if {"agent_id", "unit_size_sqm"}.issubset(frame.columns):
+            frame = frame.copy()
+            if "community" in frame.columns:
+                frame["_community_norm"] = frame["community"].astype(str).map(_normalize_community_name)
+            else:
+                frame["_community_norm"] = ""
+            frames.append(frame)
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True, sort=False).drop_duplicates(subset=["agent_id"], keep="first")
+
+
+
+@lru_cache(maxsize=16)
+def _phase2_agent_lookup_for_root(root_str: str) -> dict[str, dict[str, Any]]:
+    agents = _phase2_agents_table_for_root(root_str)
+    if agents.empty or "agent_id" not in agents.columns:
+        return {}
+    return agents.set_index(agents["agent_id"].astype(str)).to_dict(orient="index")
+
+def _phase2_resident_rows(log_data: dict[str, Any]) -> list[dict[str, Any]]:
+    history = log_data.get("negotiation_history")
+    if isinstance(history, list) and history:
+        for entry in reversed(history):
+            residents = entry.get("residents") if isinstance(entry, dict) else None
+            if isinstance(residents, list) and residents:
+                return [r for r in residents if isinstance(r, dict)]
+    residents = log_data.get("residents")
+    if isinstance(residents, list):
+        return [r for r in residents if isinstance(r, dict)]
+    return []
+
+
+def _phase2_compute_objectives_from_log(log_data: dict[str, Any], log_path: Path, root: Path, run_cfg: dict[str, Any] | None = None) -> dict[str, float]:
+    """Compute per-community objective metrics from a raw negotiation log.
+
+    New UI runs do not necessarily write phase2 summary CSVs or community_result.json.
+    This helper reconstructs the six comparison objectives from the final log state so
+    the community detail cards and Policy Comparison are not dependent on summary files.
+    """
+    final_metrics = log_data.get("final_metrics", {}) or {}
+    final_policy = log_data.get("final_policy", {}) or {}
+    planner = final_policy.get("planner", {}) or {}
+    developer = final_policy.get("developer", {}) or {}
+    community_info = log_data.get("community_info", {}) or {}
+    residents = _phase2_resident_rows(log_data)
+
+    extension_ratio = _safe_float(planner.get("extension_ratio"), _safe_float(community_info.get("extension_ratio"), 0.0))
+    subsidy_ratio = _safe_float(planner.get("cash_subsidy_ratio"), 0.0)
+    final_agree_ratio = _safe_float(final_metrics.get("final_agree_ratio"), np.nan)
+    if pd.isna(final_agree_ratio) and residents:
+        agree_values = [_safe_float(r.get("agree"), np.nan) for r in residents]
+        agree_values = [v for v in agree_values if not pd.isna(v)]
+        final_agree_ratio = float(np.mean(agree_values)) if agree_values else np.nan
+
+    developer_profit = _safe_float(final_metrics.get("final_profit", developer.get("profit")), np.nan)
+    developer_profit_rate = _safe_float(final_metrics.get("final_profit_rate", developer.get("profit_rate")), np.nan)
+
+    if not residents:
+        return {
+            "final_agree_ratio": final_agree_ratio,
+            "extension_ratio_final": extension_ratio,
+            "cash_subsidy_ratio_final": subsidy_ratio,
+            "developer_profit": developer_profit,
+            "developer_profit_rate": developer_profit_rate,
+            "resident_mean_utility": np.nan,
+            "low_income_mean_utility": np.nan,
+            "utility_std": np.nan,
+            "utility_gini": np.nan,
+            "subsidy_total_cost": np.nan,
+        }
+
+    agent_by_id = _phase2_agent_lookup_for_root(str(root.resolve()))
+
+    cfg = run_cfg if isinstance(run_cfg, dict) else {}
+    utility_cfg = cfg.get("utility", {}) if isinstance(cfg.get("utility", {}), dict) else {}
+    resident_weights = utility_cfg.get("resident", {}) if isinstance(utility_cfg.get("resident", {}), dict) else {}
+    subsidy_cfg = cfg.get("subsidy", {}) if isinstance(cfg.get("subsidy", {}), dict) else {}
+    low_income_only = bool(subsidy_cfg.get("low_income_only", False))
+    low_income_threshold = _safe_float(subsidy_cfg.get("low_income_threshold"), np.inf)
+
+    w_base_cost = _safe_float(resident_weights.get("base_cost"), 1.0)
+    w_extension_cost = _safe_float(resident_weights.get("extension_cost"), 1.0)
+    w_parking_cost = _safe_float(resident_weights.get("parking_cost"), 1.0)
+    w_market_value = _safe_float(resident_weights.get("market_value"), 1.0)
+    w_subsidy = _safe_float(resident_weights.get("subsidy"), 1.0)
+
+    total_existing_area = _safe_float(community_info.get("total_existing_area"), np.nan)
+    if pd.isna(total_existing_area) or total_existing_area <= 0:
+        total_existing_area = np.nan
+    public_service_area = 180.0 if bool(developer.get("build_public_service", False)) else 0.0
+    effective_ext_ratio = max(0.0, extension_ratio - (public_service_area / total_existing_area if not pd.isna(total_existing_area) and total_existing_area > 0 else 0.0))
+
+    base_price = _safe_float(developer.get("base_price"), 0.0)
+    extension_price = _safe_float(developer.get("extension_price"), _safe_float(community_info.get("extension_price"), 0.0))
+    ext_cost_price = extension_price * 0.8
+    market_price = _safe_float(community_info.get("extension_price"), _safe_float(community_info.get("current_price"), extension_price))
+    parking_fee = _safe_float(developer.get("parking_fee"), 0.0)
+
+    default_orig_area = np.nan
+    if not pd.isna(total_existing_area) and len(residents) > 0:
+        default_orig_area = total_existing_area / float(len(residents))
+
+    utilities: list[float] = []
+    subsidy_amounts: list[float] = []
+    low_income_utilities: list[float] = []
+    orig_areas: list[float] = []
+
+    for resident in residents:
+        agent_id = _strip_str(resident.get("agent_id"))
+        agent = agent_by_id.get(agent_id, {}) if agent_id else {}
+        orig_area = _safe_float(agent.get("unit_size_sqm"), np.nan)
+        if pd.isna(orig_area) or orig_area <= 0:
+            expected_ext = _safe_float(resident.get("expected_extension_area"), np.nan)
+            if not pd.isna(expected_ext) and effective_ext_ratio > 0:
+                orig_area = max(expected_ext / effective_ext_ratio, 1.0)
+            elif not pd.isna(default_orig_area) and default_orig_area > 0:
+                orig_area = default_orig_area
+            else:
+                orig_area = 1.0
+        orig_areas.append(orig_area)
+
+        selected_ext = _safe_float(resident.get("chosen_extension_area", resident.get("ext_area")), 0.0)
+        chosen_ext = max(0.0, min(selected_ext, orig_area * effective_ext_ratio))
+        want_parking = 1.0 if _safe_float(resident.get("want_parking"), 0.0) >= 0.5 else 0.0
+
+        base_cost = w_base_cost * (orig_area * base_price)
+        ext_cost = w_extension_cost * (chosen_ext * ext_cost_price)
+        parking_cost = w_parking_cost * (parking_fee * want_parking)
+        expand_cost = base_cost + ext_cost + parking_cost
+        no_expand_cost = base_cost + parking_cost
+        cost = expand_cost if chosen_ext > 0 else no_expand_cost
+
+        base_value = w_market_value * (orig_area * market_price)
+        ext_value = w_market_value * (chosen_ext * market_price)
+        expand_value = base_value + ext_value
+        no_expand_value = base_value
+        utility_expand = expand_value - expand_cost
+        utility_no_expand = no_expand_value - no_expand_cost
+
+        subsidy_amount = 0.0
+        if subsidy_ratio > 0 and w_subsidy != 0.0:
+            raw_subsidy = cost * subsidy_ratio * w_subsidy
+            annual_income = _safe_float(agent.get("annual_income_rmb"), np.nan)
+            is_low_income = (not pd.isna(annual_income)) and annual_income < low_income_threshold
+            subsidy_amount = raw_subsidy if (not low_income_only or is_low_income) else 0.0
+        utility = (utility_expand if chosen_ext > 0 else utility_no_expand) + subsidy_amount
+        utilities.append(float(utility))
+        subsidy_amounts.append(float(subsidy_amount))
+
+        annual_income = _safe_float(agent.get("annual_income_rmb"), np.nan)
+        if not pd.isna(annual_income) and annual_income < low_income_threshold:
+            low_income_utilities.append(float(utility))
+
+    utility_arr = np.asarray(utilities, dtype=float)
+    resident_mean_utility = float(np.mean(utility_arr)) if utility_arr.size else np.nan
+    utility_std = float(np.std(utility_arr)) if utility_arr.size else np.nan
+    utility_gini = _phase2_gini(utility_arr)
+    low_income_mean_utility = float(np.mean(low_income_utilities)) if low_income_utilities else resident_mean_utility
+
+    subsidy_total_cost = float(np.sum(subsidy_amounts)) if subsidy_amounts else 0.0
+    if subsidy_total_cost > 0 and not pd.isna(total_existing_area) and sum(orig_areas) > 0:
+        # Raw logs often store representative residents rather than every household.
+        # Scale subsidy from the logged representatives to the community floor area.
+        subsidy_total_cost = subsidy_total_cost * float(total_existing_area) / float(np.sum(orig_areas))
+
+    return {
+        "final_agree_ratio": final_agree_ratio,
+        "extension_ratio_final": extension_ratio,
+        "cash_subsidy_ratio_final": subsidy_ratio,
+        "developer_profit": developer_profit,
+        "developer_profit_rate": developer_profit_rate,
+        "resident_mean_utility": resident_mean_utility,
+        "low_income_mean_utility": low_income_mean_utility,
+        "utility_std": utility_std,
+        "utility_gini": utility_gini,
+        "subsidy_total_cost": subsidy_total_cost,
+    }
+
+
+def _phase2_metric_value(community_result: dict[str, Any], computed: dict[str, Any], key: str, fallback: Any = np.nan) -> float:
+    value = community_result.get(key, np.nan) if isinstance(community_result, dict) else np.nan
+    if not pd.isna(_safe_float(value, np.nan)):
+        return _safe_float(value, np.nan)
+    value = computed.get(key, fallback) if isinstance(computed, dict) else fallback
+    return _safe_float(value, fallback)
+
 def _load_negotiation_logs_as_phase2_results(phase2_root: str) -> pd.DataFrame:
     root = Path(_resolve_app_path(phase2_root))
     if not root.exists():
@@ -1388,6 +1693,17 @@ def _load_negotiation_logs_as_phase2_results(phase2_root: str) -> pd.DataFrame:
         final_policy = log_data.get("final_policy", {}) or {}
         planner = final_policy.get("planner", {}) or {}
         developer = final_policy.get("developer", {}) or {}
+        community_result_path = log_path.parent / "community_result.json"
+        community_result: dict[str, Any] = {}
+        if community_result_path.exists():
+            try:
+                loaded_result = _load_json(str(community_result_path.resolve()))
+                if isinstance(loaded_result, dict):
+                    community_result = loaded_result
+            except Exception:
+                community_result = {}
+        run_dir = _phase2_log_run_dir(log_path, root)
+        has_summary_csv = _phase2_log_has_own_summary_csv(log_path, root)
         run_cfg = _config_for_log_path(log_path, root)
         config_extension_cap = _safe_float(run_cfg.get("max_extension_ratio"), np.nan) if run_cfg else np.nan
         config_subsidy_cap = _safe_float(run_cfg.get("cash_subsidy_cap"), np.nan) if run_cfg else np.nan
@@ -1397,10 +1713,14 @@ def _load_negotiation_logs_as_phase2_results(phase2_root: str) -> pd.DataFrame:
         community_name = _normalize_community_name(
             _strip_str(log_data.get("community_info", {}).get("name")) or log_path.parent.name.replace("sim_", "")
         )
-        final_agree_ratio = _safe_float(final_metrics.get("final_agree_ratio"), np.nan)
-        threshold = _safe_float(log_data.get("community_info", {}).get("required_agree_ratio"), 0.0)
-        subsidy_ratio = _safe_float(planner.get("cash_subsidy_ratio"), np.nan)
-        extension_ratio = _safe_float(planner.get("extension_ratio"), np.nan)
+        computed_objectives = _phase2_compute_objectives_from_log(log_data, log_path, root, run_cfg)
+        final_agree_ratio = _phase2_metric_value(community_result, computed_objectives, "final_agree_ratio", final_metrics.get("final_agree_ratio"))
+        threshold = _safe_float(
+            community_result.get("threshold", log_data.get("community_info", {}).get("required_agree_ratio")),
+            0.0,
+        )
+        subsidy_ratio = _phase2_metric_value(community_result, computed_objectives, "cash_subsidy_ratio_final", planner.get("cash_subsidy_ratio"))
+        extension_ratio = _phase2_metric_value(community_result, computed_objectives, "extension_ratio_final", planner.get("extension_ratio"))
         rows.append(
             {
                 "rule_id": config_rule_id,
@@ -1412,25 +1732,28 @@ def _load_negotiation_logs_as_phase2_results(phase2_root: str) -> pd.DataFrame:
                 "community_name": community_name,
                 "seed": _seed_from_log_path(log_path),
                 "threshold": threshold,
-                "is_success": 1.0 if not pd.isna(final_agree_ratio) and final_agree_ratio >= threshold else 0.0,
+                "is_success": _safe_float(community_result.get("is_success"), 1.0 if not pd.isna(final_agree_ratio) and final_agree_ratio >= threshold else 0.0),
                 "final_agree_ratio": final_agree_ratio,
                 "avg_extension_ratio": extension_ratio,
                 "avg_subsidy_ratio": subsidy_ratio,
                 "extension_ratio_final": extension_ratio,
                 "cash_subsidy_ratio_final": subsidy_ratio,
-                "developer_profit": _safe_float(final_metrics.get("final_profit"), np.nan),
-                "developer_profit_rate": _safe_float(final_metrics.get("final_profit_rate"), np.nan),
-                "resident_mean_utility": np.nan,
-                "low_income_mean_utility": np.nan,
-                "utility_std": np.nan,
-                "utility_gini": np.nan,
-                "subsidy_total_cost": np.nan,
+                "developer_profit": _phase2_metric_value(community_result, computed_objectives, "developer_profit", final_metrics.get("final_profit")),
+                "developer_profit_rate": _phase2_metric_value(community_result, computed_objectives, "developer_profit_rate", final_metrics.get("final_profit_rate")),
+                "resident_mean_utility": _phase2_metric_value(community_result, computed_objectives, "resident_mean_utility"),
+                "low_income_mean_utility": _phase2_metric_value(community_result, computed_objectives, "low_income_mean_utility"),
+                "utility_std": _phase2_metric_value(community_result, computed_objectives, "utility_std"),
+                "utility_gini": _phase2_metric_value(community_result, computed_objectives, "utility_gini"),
+                "subsidy_total_cost": _phase2_metric_value(community_result, computed_objectives, "subsidy_total_cost"),
                 "developer_base_price": _safe_float(developer.get("base_price"), np.nan),
                 "developer_extension_price": _safe_float(developer.get("extension_price"), np.nan),
-                "community_result_path": "",
+                "community_result_path": str(community_result_path.resolve()) if community_result_path.exists() else "",
                 "log_path": str(log_path.resolve()),
                 "rounds": _safe_int(log_data.get("rounds"), 0),
                 "outcome": _strip_str(log_data.get("outcome")) or "unknown",
+                "_source_kind": "raw_log",
+                "_phase2_source_dir": str(run_dir.resolve()),
+                "_has_summary_csv": bool(has_summary_csv),
             }
         )
     if not rows:
@@ -1446,38 +1769,45 @@ def _load_json(log_path: str) -> dict[str, Any]:
 
 @lru_cache(maxsize=64)
 def _index_phase2_logs(phase2_root: str, rule_id: str) -> dict[str, list[dict[str, str]]]:
-    rule_dir = Path(phase2_root) / rule_id
+    """Index raw negotiation logs independently from summary CSV files."""
     index: dict[str, list[dict[str, str]]] = {}
-    if not rule_dir.exists():
-        results_df = _load_phase2_community_results(phase2_root)
-        if results_df.empty or "rule_id" not in results_df.columns or "log_path" not in results_df.columns:
-            return index
-        results_df = _annotate_phase2_policy_groups(results_df)
-        filter_col = "policy_rule_id" if "policy_rule_id" in results_df.columns else "rule_id"
-        filtered = results_df.loc[results_df[filter_col].astype(str) == str(rule_id)].copy()
-        if filtered.empty:
-            return index
-        for row in filtered.itertuples(index=False):
-            log_path = getattr(row, "log_path", None)
-            if not log_path:
-                continue
-            community_name = _normalize_community_name(getattr(row, "community_name", ""))
-            seed = str(getattr(row, "seed", "") or _seed_from_log_path(Path(log_path)))
-            index.setdefault(community_name, []).append({"seed": seed, "log_path": str(log_path)})
-        for community_name in index:
-            index[community_name] = sorted(index[community_name], key=lambda item: str(item["seed"]))
+    log_df = _load_negotiation_logs_as_phase2_results(phase2_root)
+    if log_df.empty or "log_path" not in log_df.columns:
         return index
 
-    for log_path in sorted(rule_dir.glob("seed_*/sim_*/negotiation_log_*.json")):
-        seed = log_path.parents[1].name.replace("seed_", "")
-        community_name = _normalize_community_name(log_path.parent.name.replace("sim_", ""))
-        index.setdefault(community_name, []).append(
-            {"seed": seed, "log_path": str(log_path.resolve())}
-        )
+    annotated = _annotate_phase2_policy_groups(log_df)
+    filter_col = "policy_rule_id" if "policy_rule_id" in annotated.columns else "rule_id"
+    if filter_col not in annotated.columns:
+        return index
+    filtered = annotated.loc[annotated[filter_col].astype(str) == str(rule_id)].copy()
+    if filtered.empty and "rule_id" in annotated.columns:
+        filtered = annotated.loc[annotated["rule_id"].astype(str) == str(rule_id)].copy()
+    if filtered.empty:
+        return index
+
+    for row in filtered.itertuples(index=False):
+        log_path = getattr(row, "log_path", None)
+        if not log_path:
+            continue
+        community_name = _normalize_community_name(getattr(row, "community_name", ""))
+        if not community_name:
+            continue
+        seed = str(getattr(row, "seed", "") or _seed_from_log_path(Path(log_path)))
+        item = {
+            "seed": seed,
+            "log_path": str(log_path),
+        }
+        community_result_path = _strip_str(getattr(row, "community_result_path", ""))
+        if community_result_path:
+            item["community_result_path"] = community_result_path
+        index.setdefault(community_name, []).append(item)
 
     for community_name in index:
+        deduped: dict[str, dict[str, str]] = {}
+        for item in index[community_name]:
+            deduped[str(item["seed"])] = item
         index[community_name] = sorted(
-            index[community_name],
+            deduped.values(),
             key=lambda item: int(item["seed"]) if str(item["seed"]).isdigit() else str(item["seed"]),
         )
     return index
@@ -1485,25 +1815,23 @@ def _index_phase2_logs(phase2_root: str, rule_id: str) -> dict[str, list[dict[st
 
 @lru_cache(maxsize=64)
 def _available_phase2_seeds(phase2_root: str, rule_id: str) -> tuple[str, ...]:
-    rule_dir = Path(phase2_root) / rule_id
-    if not rule_dir.exists():
-        results_df = _load_phase2_community_results(phase2_root)
-        if results_df.empty or "rule_id" not in results_df.columns or "seed" not in results_df.columns:
-            return tuple()
-        seeds = (
-            results_df.loc[_annotate_phase2_policy_groups(results_df).pipe(lambda d: d["policy_rule_id"].astype(str) == str(rule_id) if "policy_rule_id" in d.columns else d["rule_id"].astype(str) == str(rule_id)), "seed"]
-            .dropna()
-            .astype(str)
-            .drop_duplicates()
-            .sort_values()
-            .tolist()
-        )
-        return tuple(seeds)
-    seeds = []
-    for seed_dir in sorted(rule_dir.glob("seed_*")):
-        if seed_dir.is_dir():
-            seeds.append(seed_dir.name.replace("seed_", ""))
-    return tuple(seeds)
+    seeds: set[str] = set()
+    results_df = _load_phase2_community_results(phase2_root)
+    if not results_df.empty and "seed" in results_df.columns:
+        annotated = _annotate_phase2_policy_groups(results_df)
+        filter_col = "policy_rule_id" if "policy_rule_id" in annotated.columns else "rule_id"
+        if filter_col in annotated.columns:
+            seeds.update(
+                annotated.loc[annotated[filter_col].astype(str) == str(rule_id), "seed"]
+                .dropna()
+                .astype(str)
+                .tolist()
+            )
+
+    for candidates in _index_phase2_logs(phase2_root, rule_id).values():
+        seeds.update(str(item.get("seed", "")) for item in candidates if str(item.get("seed", "")))
+
+    return tuple(sorted(seeds, key=lambda item: int(item) if str(item).isdigit() else str(item)))
 
 
 @lru_cache(maxsize=128)
