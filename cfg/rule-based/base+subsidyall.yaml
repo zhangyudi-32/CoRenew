@@ -1,0 +1,106 @@
+seed: 42
+
+community_csv: community_example.csv
+resident_csv: data/agents_by_community/community_representatives_list.csv
+all_agents_path: data/agents_by_community/ALL_agents.csv
+official_csv: data/agents_official/official_agents.csv
+target_community: none
+
+output_dir: output/ui_runs
+base_log_dir: output/ui_runs/logs
+run_timestamp: ui_run
+resume_from_checkpoint: false
+
+gov_alg: rule_based
+dev_alg: rule_based
+house_alg: llm
+
+llm_name: gpt-4o-mini
+llm_base_url: ""
+temperature: 0.2
+llm_parallel_residents: true
+resident_llm_concurrency: 8
+serialize_llm_calls: false
+llm_generate_role_prompt: false
+min_llm_interval: 0.0
+llm_timeout_seconds: 30.0
+llm_timeout_retry_attempts: 0
+llm_timeout_retry_delay_seconds: 3.0
+
+rounds_num: 8
+base_price: 3800.0
+extension_ratio: 0.0
+max_extension_ratio: 0.3
+cash_subsidy_cap: 0.1
+force_build_public_service: false
+
+planner_rule:
+  policy: baseline
+  noise_scale: 0.0
+
+developer_rule:
+  policy: baseline
+  min_profit_rate: 0.0
+
+agreement_rule:
+  mode: by_build_year
+  fixed_ratio: 1.0
+  by_build_year:
+    current_year: 2026
+    rules:
+      - max_age: 50
+        ratio: 0.9
+      - max_age: 60
+        ratio: 0.8
+      - max_age: 70
+        ratio: 0.7
+      - max_age:
+        ratio: 0.65
+
+subsidy:
+  low_income_only: false
+  low_income_threshold: .inf
+
+parking_area_per_slot: 25.0
+parking_unit_construction_cost: 2500.0
+
+cost_benefit_modules:
+  planner: []
+  developer:
+    - base_sale_income
+    - extension_sale_income
+    - parking_income
+    - base_construction_cost
+    - extension_construction_cost
+    - parking_construction_cost
+  resident:
+    - base_payment
+    - extension_payment
+    - parking_payment
+    - market_value
+    - subsidy
+
+utility:
+  planner:
+    agree_ratio: 1.0
+    developer_profit_rate: 0.0
+    resident_mean_utility: 0.0
+  developer:
+    base_revenue: 1.0
+    extension_revenue: 1.0
+    parking_revenue: 1.0
+    base_cost: 1.0
+    extension_cost: 1.0
+    parking_cost: 1.0
+    public_service_cost: 1.0
+  resident:
+    base_cost: 1.0
+    extension_cost: 1.0
+    parking_cost: 1.0
+    market_value: 1.0
+    subsidy: 1.0
+
+planner_soft_policy_text: ""
+api_key: ""
+api_key_source: manual
+api_key_masked: ""

@@ -1,0 +1,28 @@
+name: corenew-local
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pandas
+  - numpy<2
+  - pyyaml
+  - matplotlib
+  - geopandas
+  - shapely
+  - pyogrio
+  - scipy
+  - scikit-learn
+  - pillow
+  - openpyxl
+  - pip:
+      - fastapi
+      - uvicorn
+      - python-multipart
+      - gradio
+      - openai
+      - transformers
+      - huggingface-hub<1.0
+      - tqdm
+      - gymnasium
+      - adjustText

@@ -1,0 +1,3 @@
+﻿community,agent_id,agent_role,live_here,tenure,household_id,unit_id,unit_type,unit_size_sqm,age,annual_income_rmb,monthly_income_rmb,household_size,ideal_weight,cluster,final_voting_weight,objective,role,info,role_prompt
+,Planner,planner,,,,,,,,,,,,,,balanced,planner,You are responsible for advancing the self-renewal process.,You are the planner and are responsible for advancing the self-renewal process.
+,Developer,developer,,,,,,,,,,,,,,balanced,developer,You are responsible for maintaining the project financial balance.,You are the developer and are responsible for maintaining the project financial balance.
