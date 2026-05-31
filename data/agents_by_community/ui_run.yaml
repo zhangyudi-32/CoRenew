@@ -1,0 +1,214 @@
+seed: 42
+community_csv: /private/var/folders/yp/z8nv_2yd5k96xsk1cwpjbwf40000gn/T/corenew_ui/6823c0e7b8/generated_bundle_20260531_111301_66720/community.csv
+resident_csv: /Users/yudizh/Desktop/self_renew/public/CoRenew/data/agents_by_community/community_representatives_list.csv
+all_agents_path: /Users/yudizh/Desktop/self_renew/public/CoRenew/data/agents_by_community/ALL_agents.csv
+official_csv: /Users/yudizh/Desktop/self_renew/public/CoRenew/data/agents_official/official_agents.csv
+target_community: FulinLou
+output_dir: /Users/yudizh/Desktop/self_renew/public/CoRenew/output/ui_runs/test
+base_log_dir: /Users/yudizh/Desktop/self_renew/public/CoRenew/output/ui_runs/test/logs
+run_timestamp: ui_run_20260531_111322
+resume_from_checkpoint: false
+gov_alg: rule_based
+dev_alg: rule_based
+house_alg: llm
+llm_name: DeepSeek-V3.2
+llm_base_url: https://llmapi.paratera.com/v1/
+temperature: 0.2
+llm_parallel_residents: true
+resident_llm_concurrency: 8
+serialize_llm_calls: false
+llm_generate_role_prompt: false
+min_llm_interval: 0.0
+llm_timeout_seconds: 30.0
+llm_timeout_retry_attempts: 0
+llm_timeout_retry_delay_seconds: 3.0
+rounds_num: 4
+base_price: 3800.0
+extension_ratio: 0.0
+max_extension_ratio: 0.3
+cash_subsidy_cap: 0.1
+force_build_public_service: false
+planner_rule:
+  policy: baseline
+  noise_scale: 0.0
+developer_rule:
+  policy: baseline
+  min_profit_rate: 0.0
+agreement_rule:
+  mode: by_build_year
+  fixed_ratio: 1.0
+  by_build_year:
+    current_year: 2026
+    rules:
+    - max_age: 50
+      ratio: 0.9
+    - max_age: 60
+      ratio: 0.8
+    - max_age: 70
+      ratio: 0.7
+    - max_age: null
+      ratio: 0.65
+subsidy:
+  low_income_only: false
+  low_income_threshold: .inf
+parking_area_per_slot: 25.0
+parking_unit_construction_cost: 2500.0
+cost_benefit_modules:
+  planner:
+  - subsidy_cost
+  developer:
+  - base_sale_income
+  - extension_sale_income
+  - parking_income
+  - subsidy_interaction
+  resident:
+  - base_payment
+  - extension_payment
+  - extension_gain
+  - parking_payment
+  - cash_subsidy
+utility:
+  planner:
+    agree_ratio: 1.0
+    developer_profit_rate: 0.0
+    resident_mean_utility: 0.0
+  developer:
+    base_revenue: 1.0
+    extension_revenue: 1.0
+    parking_revenue: 1.0
+    base_cost: 1.0
+    extension_cost: 1.0
+    parking_cost: 1.0
+    public_service_cost: 1.0
+  resident:
+    base_cost: 1.0
+    extension_cost: 1.0
+    parking_cost: 1.0
+    market_value: 1.0
+    subsidy: 1.0
+planner_soft_policy_text: ''
+api_key: ''
+api_key_source: '[runtime only]'
+api_key_masked: sk-****0Liw
+configured_utility_fields:
+- key: subsidy_cost
+  label: Subsidy cost
+  agent: planner
+  category: subsidy
+  direction: outflow
+  builtin: true
+  enabled: true
+  is_overridden: false
+  value_mode: fixed
+  fixed_value: 0.1
+  community_field: null
+  description: Planner-side subsidy spend.
+- key: base_sale_income
+  label: Base sale income
+  agent: developer
+  category: base
+  direction: inflow
+  builtin: true
+  enabled: true
+  is_overridden: false
+  value_mode: fixed
+  fixed_value: 0.0
+  community_field: null
+  description: Developer revenue from base-area sales.
+- key: extension_sale_income
+  label: Extension sale income
+  agent: developer
+  category: extension
+  direction: inflow
+  builtin: true
+  enabled: true
+  is_overridden: false
+  value_mode: fixed
+  fixed_value: 0.0
+  community_field: null
+  description: Developer revenue from extension-area sales.
+- key: parking_income
+  label: Parking income
+  agent: developer
+  category: parking
+  direction: inflow
+  builtin: true
+  enabled: true
+  is_overridden: false
+  value_mode: fixed
+  fixed_value: 0.0
+  community_field: null
+  description: Developer revenue from parking fees.
+- key: subsidy_interaction
+  label: Subsidy interaction
+  agent: developer
+  category: subsidy
+  direction: input
+  builtin: true
+  enabled: true
+  is_overridden: false
+  value_mode: fixed
+  fixed_value: 0.0
+  community_field: null
+  description: Developer-side interaction with subsidy policy.
+- key: base_payment
+  label: Base payment
+  agent: resident
+  category: base
+  direction: outflow
+  builtin: true
+  enabled: true
+  is_overridden: false
+  value_mode: fixed
+  fixed_value: 0.0
+  community_field: null
+  description: Resident payment on the base-area transaction.
+- key: extension_payment
+  label: Extension payment
+  agent: resident
+  category: extension
+  direction: outflow
+  builtin: true
+  enabled: true
+  is_overridden: false
+  value_mode: fixed
+  fixed_value: 0.0
+  community_field: null
+  description: Resident payment associated with extension area.
+- key: extension_gain
+  label: Extension gain
+  agent: resident
+  category: extension
+  direction: inflow
+  builtin: true
+  enabled: true
+  is_overridden: false
+  value_mode: fixed
+  fixed_value: 0.0
+  community_field: null
+  description: Resident benefit or gain from extension area.
+- key: parking_payment
+  label: Parking payment
+  agent: resident
+  category: parking
+  direction: outflow
+  builtin: true
+  enabled: true
+  is_overridden: false
+  value_mode: fixed
+  fixed_value: 0.0
+  community_field: null
+  description: Resident payment for parking.
+- key: cash_subsidy
+  label: Cash subsidy
+  agent: resident
+  category: subsidy
+  direction: inflow
+  builtin: true
+  enabled: true
+  is_overridden: false
+  value_mode: fixed
+  fixed_value: 0.0
+  community_field: null
+  description: Resident-side cash subsidy inflow.
+repeat_count: 1

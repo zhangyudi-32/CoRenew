@@ -175,7 +175,7 @@ def main():
         print(f"\n[SYSTEM] Residential Area: {community_name}")
         comm_row = (
             community_df.loc[
-                community_df["小区"].astype(str).str.strip() == community_name
+                community_df["community_name"].astype(str).str.strip() == community_name
             ]
             .iloc[0]
         )

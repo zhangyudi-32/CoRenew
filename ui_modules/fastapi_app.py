@@ -19,11 +19,12 @@ def create_app(home_path: str = "/app") -> FastAPI:
         return HTMLResponse(_build_run_setup_page(embedded))
 
     @fastapi_app.get("/local-file")
-    def local_file(path: str = Query(...)):
+    def local_file(path: str = Query(...), filename: str | None = Query(None)):
         target = Path(path)
         if not target.exists():
             return HTMLResponse("file not found", status_code=404)
-        return FileResponse(target)
+        safe_filename = Path(filename).name if filename else target.name
+        return FileResponse(target, filename=safe_filename)
 
     @fastapi_app.get("/api/local/directories", response_class=JSONResponse)
     def api_local_directories(path: str = ""):
@@ -125,7 +126,7 @@ def create_app(home_path: str = "/app") -> FastAPI:
         )["preflight_html"]
         defaults["preflight_html"] = preflight_html
         defaults["value_flow_model_html"] = utility_state["value_flow_model_html"]
-        defaults["template_url"] = _file_url(str(_ensure_run_template_excel()))
+        defaults["template_url"] = _file_url(str(_ensure_run_template_excel()), "community_csv_template.xlsx")
         defaults["required_columns_html"] = _required_upload_data_markup()
         return JSONResponse(_json_ready({"defaults": defaults}))
 

@@ -89,19 +89,54 @@ DEFAULT_SHP_CANDIDATES = [
 ]
 
 COMMUNITY_COLUMN_ALIASES = {
-    "community": "小区",
-    "building_type": "建筑类型",
-    "tenure_category": "权属类别",
-    "building_quality": "建筑质量",
-    "build_year": "建成年代",
-    "comment_count": "留言数量",
-    "greening_rate": "绿化率",
-    "residual_far": "剩余容积率",
-    "potential_score": "潜力得分",
-    "house_price_rmb_sqm": "房价（元/平）",
-    "far": "容积率",
-    "household_count": "户数",
-    "parking": "停车位",
+    # Public template schema follows the README fields exactly. Internally,
+    # columns are normalized to snake_case names used by the simulation code.
+    "community": "community_name",
+    "community_name": "community_name",
+    "小区": "community_name",
+    "小区名称": "community_name",
+    "building_type": "building_type",
+    "tenure_category": "tenure_category",
+    "building_quality": "building_quality",
+    "build_year": "build_year",
+    "comment_count": "comment_count",
+    "greening_rate": "greening_rate",
+    "residual_far": "residual_far",
+    "potential_score": "potential_score",
+    "dominant unit type": "dominant_unit_type",
+    "dominant_unit_type": "dominant_unit_type",
+    "house_price_rmb_sqm": "house_price_rmb_sqm",
+    "far": "far",
+    "household_count": "household_count",
+    "parking": "parking",
+    "rent_rate": "rent_rate",
+    "area": "area",
+    "parking_price": "parking_price",
+    "parking_slots_per_capita": "parking_slots_per_capita",
+    "nearby_max_price": "nearby_max_price",
+    "community_id": "community_id",
+    "clinic": "clinic",
+    "general_hospital": "general_hospital",
+    "leisure": "leisure",
+    "metro_station": "metro_station",
+    "park_square": "park_square",
+    "restaurant": "restaurant",
+    "school": "school",
+    "shopping": "shopping",
+    "sports_facility": "sports_facility",
+    # Legacy Chinese columns are still accepted for backward compatibility.
+    "建筑类型": "building_type",
+    "权属类别": "tenure_category",
+    "建筑质量": "building_quality",
+    "建成年代": "build_year",
+    "留言数量": "comment_count",
+    "绿化率": "greening_rate",
+    "剩余容积率": "residual_far",
+    "潜力得分": "potential_score",
+    "房价（元/平）": "house_price_rmb_sqm",
+    "容积率": "far",
+    "户数": "household_count",
+    "停车位": "parking",
 }
 
 COMMUNITY_NAME_MAP = {
@@ -118,7 +153,7 @@ COMMUNITY_NAME_MAP = {
     "富临楼": "FulinLou",
 }
 
-NAME_COLUMN_CANDIDATES = ["小区", "community", "community_name", "name", "小区名称"]
+NAME_COLUMN_CANDIDATES = ["community", "community_name"]
 MAP_METRICS = {
     "final_agree_ratio": "Final Agreement Rate",
     "avg_extension_ratio": "Final Extension Policy",
@@ -160,41 +195,91 @@ RESIDENT_UI_RENAME = {
     "期望扩面面积": "Expected Extension Area",
 }
 COMMUNITY_REQUIRED_COLUMNS = {
-    "小区",
+    "community_name",
     "area",
-    "容积率",
-    "建成年代",
+    "far",
+    "build_year",
     "parking_slots_per_capita",
     "parking_price",
     "nearby_max_price",
-    "房价（元/平）",
+    "house_price_rmb_sqm",
 }
 COMMUNITY_AGENT_GENERATION_COLUMNS = COMMUNITY_REQUIRED_COLUMNS | {
-    "户数",
-    "dominant unit type",
+    "household_count",
+    "dominant_unit_type",
     "rent_rate",
 }
 COMMUNITY_POPULATION_COLUMNS = {
-    "小区",
-    "户数",
-    "dominant unit type",
+    "community_name",
+    "household_count",
+    "dominant_unit_type",
     "rent_rate",
-    "房价（元/平）",
+    "house_price_rmb_sqm",
 }
+COMMUNITY_TEMPLATE_COLUMNS = [
+    "community",
+    "building_type",
+    "tenure_category",
+    "building_quality",
+    "build_year",
+    "comment_count",
+    "greening_rate",
+    "residual_far",
+    "potential_score",
+    "dominant unit type",
+    "house_price_rmb_sqm",
+    "far",
+    "household_count",
+    "parking",
+    "rent_rate",
+    "area",
+    "parking_price",
+    "parking_slots_per_capita",
+    "nearby_max_price",
+    "community_id",
+    "clinic",
+    "general_hospital",
+    "leisure",
+    "metro_station",
+    "park_square",
+    "restaurant",
+    "school",
+    "shopping",
+    "sports_facility",
+]
+
 COMMUNITY_POPULATION_FIELD_LABELS = [
-    ("小区", "Community Name"),
-    ("户数", "Household Count"),
+    ("community", "Community"),
+    ("building_type", "Building Type"),
+    ("tenure_category", "Tenure Category"),
+    ("building_quality", "Building Quality"),
+    ("build_year", "Build Year"),
+    ("comment_count", "Comment Count"),
+    ("greening_rate", "Greening Rate"),
+    ("residual_far", "Residual FAR"),
+    ("potential_score", "Potential Score"),
     ("dominant unit type", "Dominant Unit Type"),
+    ("house_price_rmb_sqm", "House Price RMB/SQM"),
+    ("far", "FAR"),
+    ("household_count", "Household Count"),
+    ("parking", "Parking"),
     ("rent_rate", "Rent Rate"),
-    ("房价（元/平）", "Pre-renewal House Price"),
 ]
 COMMUNITY_SIMULATION_FIELD_LABELS = [
     ("area", "Community Area"),
-    ("容积率", "FAR"),
-    ("建成年代", "Build Year"),
-    ("parking_slots_per_capita", "Parking Slots / Capita"),
     ("parking_price", "Parking Price"),
+    ("parking_slots_per_capita", "Parking Slots / Capita"),
     ("nearby_max_price", "Nearby Max Price"),
+    ("community_id", "Community ID"),
+    ("clinic", "Clinic"),
+    ("general_hospital", "General Hospital"),
+    ("leisure", "Leisure"),
+    ("metro_station", "Metro Station"),
+    ("park_square", "Park Square"),
+    ("restaurant", "Restaurant"),
+    ("school", "School"),
+    ("shopping", "Shopping"),
+    ("sports_facility", "Sports Facility"),
 ]
 AGENT_REQUIRED_COLUMNS = {
     "community",
@@ -431,7 +516,7 @@ UTILITY_FIELD_DEFS = [
         "description": "Resident-side cash subsidy inflow.",
     },
 ]
-VALUE_FLOW_META_EXEMPT_COLUMNS = {"小区", "community", "户数", "dominant unit type", "rent_rate", "建成年代"}
+VALUE_FLOW_META_EXEMPT_COLUMNS = {"community_name", "community", "household_count", "dominant_unit_type", "rent_rate", "build_year"}
 
 UNIT_SHARE = {
     "S": {"S": 0.65, "M": 0.25, "L": 0.10},
@@ -865,14 +950,11 @@ def _copy_or_convert_table(source_path: str | Path, target_dir: Path, stem: str)
     source = Path(_resolve_app_path(source_path))
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    if source.suffix.lower() in {".csv", ".txt"}:
+    if source.suffix.lower() in {".csv", ".txt", ".xlsx", ".xls"}:
+        # Always write a normalized CSV copy into the run staging directory so
+        # downstream steps see the canonical English community schema.
         target = target_dir / f"{stem}.csv"
-        shutil.copy2(source, target)
-        return str(target)
-
-    if source.suffix.lower() in {".xlsx", ".xls"}:
-        df = pd.read_excel(source)
-        target = target_dir / f"{stem}.csv"
+        df = _read_table(source, normalize_aliases=True)
         df.to_csv(target, index=False, encoding="utf-8-sig")
         return str(target)
 
@@ -887,7 +969,7 @@ def _read_table(table_path: str | Path, normalize_aliases: bool = True) -> pd.Da
             return df
         rename_map = {
             src: dst for src, dst in COMMUNITY_COLUMN_ALIASES.items()
-            if src in df.columns and dst not in df.columns
+            if src in df.columns and src != dst and dst not in df.columns
         }
         return df.rename(columns=rename_map) if rename_map else df
     if path.suffix.lower() in {".xlsx", ".xls"}:
@@ -896,7 +978,7 @@ def _read_table(table_path: str | Path, normalize_aliases: bool = True) -> pd.Da
             return df
         rename_map = {
             src: dst for src, dst in COMMUNITY_COLUMN_ALIASES.items()
-            if src in df.columns and dst not in df.columns
+            if src in df.columns and src != dst and dst not in df.columns
         }
         return df.rename(columns=rename_map) if rename_map else df
     raise gr.Error(f"Unsupported table format: {path.suffix}")
@@ -923,10 +1005,12 @@ def _community_list_from_data(
     agent_df: pd.DataFrame | None = None,
 ) -> list[str]:
     communities: set[str] = set()
-    if community_df is not None and "小区" in community_df.columns:
-        communities.update(
-            community_df["小区"].astype(str).str.strip().map(_normalize_community_name).replace("", np.nan).dropna().tolist()
-        )
+    if community_df is not None:
+        community_col = "community_name" if "community_name" in community_df.columns else ("community" if "community" in community_df.columns else None)
+        if community_col:
+            communities.update(
+                community_df[community_col].astype(str).str.strip().map(_normalize_community_name).replace("", np.nan).dropna().tolist()
+            )
     if agent_df is not None and "community" in agent_df.columns:
         communities.update(
             agent_df["community"].astype(str).str.strip().map(_normalize_community_name).replace("", np.nan).dropna().tolist()
@@ -1917,6 +2001,16 @@ def _default_all_agents_csv() -> str:
     )
 
 
+
+
+def _file_url(path: str | None, filename: str | None = None) -> str | None:
+    if not path:
+        return None
+    params = {"path": path}
+    if filename:
+        params["filename"] = filename
+    return f"/local-file?{urlencode(params)}"
+
 def _default_model_name() -> str:
     return _first_non_empty(load_local_api_defaults().get("model"), _load_template_config().get("llm_name"), "gpt-4o-mini")
 
@@ -1953,26 +2047,60 @@ def _required_upload_data_markup() -> str:
 
 
 def _ensure_run_template_excel() -> Path:
-    template_path = TEMPLATE_DIR / "community_population_template.xlsx"
-    if template_path.exists():
-        return template_path
+    template_path = TEMPLATE_DIR / "community_csv_template.xlsx"
+    ordered_columns = COMMUNITY_TEMPLATE_COLUMNS
 
-    ordered_columns = [code for code, _ in COMMUNITY_POPULATION_FIELD_LABELS] + [
-        code for code, _ in COMMUNITY_SIMULATION_FIELD_LABELS
-    ]
+    if template_path.exists():
+        try:
+            existing_columns = list(pd.read_excel(template_path, nrows=0).columns)
+            if existing_columns == ordered_columns:
+                return template_path
+        except Exception:
+            pass
+
     sample_row = {column: "" for column in ordered_columns}
-    sample_row["小区"] = "Example Community A"
+    sample_row.update({
+        "community": "HuaduGuangmingxiangXiaoqu",
+        "building_type": "mid-rise",
+        "tenure_category": "market-rate residential",
+        "building_quality": 0.09,
+        "build_year": 1986.0,
+        "comment_count": 2,
+        "greening_rate": "31%",
+        "residual_far": 1.15,
+        "potential_score": 3.73,
+        "dominant unit type": "L",
+        "house_price_rmb_sqm": 5733,
+        "far": 1.5,
+        "household_count": 190,
+        "parking": 0,
+        "rent_rate": 0.3,
+        "area": 32755.609,
+        "parking_price": 4269.66,
+        "parking_slots_per_capita": 0.0,
+        "nearby_max_price": 8800.0,
+        "community_id": 79,
+        "clinic": 74,
+        "general_hospital": 32,
+        "leisure": 108,
+        "metro_station": 13,
+        "park_square": 0,
+        "restaurant": 192,
+        "school": 81,
+        "shopping": 198,
+        "sports_facility": 122,
+    })
     template_df = pd.DataFrame([sample_row], columns=ordered_columns)
     template_df.to_excel(template_path, index=False)
     return template_path
 
 
 def _run_template_download_markup() -> str:
-    template_url = _file_url(str(_ensure_run_template_excel()))
+    template_url = _file_url(str(_ensure_run_template_excel()), "community_csv_template.xlsx")
     return f"""
     <div class="template-download-row">
       <div class="template-download-copy">Template Excel</div>
-      <a class="template-download-button" href="{html.escape(template_url or '#')}" download>Download Template Excel</a>
+      <a class="template-download-button" href="{html.escape(template_url or '#')}" download="community_csv_template.xlsx">Download Template Excel</a>
     </div>
     """
 
@@ -2478,9 +2606,9 @@ def _estimate_generation_summary(
     residents_per_household: float,
     representatives_per_community: int,
 ) -> tuple[int, int, int]:
-    if community_df.empty or "户数" not in community_df.columns:
+    if community_df.empty or "household_count" not in community_df.columns:
         return 0, 0, 0
-    households = int(pd.to_numeric(community_df["户数"], errors="coerce").fillna(0).sum())
+    households = int(pd.to_numeric(community_df["household_count"], errors="coerce").fillna(0).sum())
     communities = len(_community_list_from_data(community_df=community_df))
     residents = int(round(households * float(residents_per_household)))
     representatives = int(communities * int(representatives_per_community))
@@ -2609,11 +2737,11 @@ def _generate_agent_bundle(
     random.seed(seed)
 
     community_df = community_df.copy()
-    community_df["房价（元/平）"] = pd.to_numeric(community_df["房价（元/平）"], errors="coerce")
-    price_median = float(community_df["房价（元/平）"].median()) if not community_df["房价（元/平）"].dropna().empty else 1.0
+    community_df["house_price_rmb_sqm"] = pd.to_numeric(community_df["house_price_rmb_sqm"], errors="coerce")
+    price_median = float(community_df["house_price_rmb_sqm"].median()) if not community_df["house_price_rmb_sqm"].dropna().empty else 1.0
     price_rank = (
-        community_df["房价（元/平）"].rank(pct=True).fillna(0.5).values
-        if "房价（元/平）" in community_df.columns
+        community_df["house_price_rmb_sqm"].rank(pct=True).fillna(0.5).values
+        if "house_price_rmb_sqm" in community_df.columns
         else np.full(len(community_df), 0.5)
     )
 
@@ -2623,12 +2751,12 @@ def _generate_agent_bundle(
     all_agents_frames: list[pd.DataFrame] = []
 
     for idx, row in community_df.iterrows():
-        community_name = _strip_str(row.get("小区")) or f"Community {idx + 1}"
-        n_households = max(1, _safe_int(row.get("户数"), 1))
-        dominant_type = _normalize_unit_type(row.get("dominant unit type", "M"))
+        community_name = _strip_str(row.get("community_name")) or f"Community {idx + 1}"
+        n_households = max(1, _safe_int(row.get("household_count"), 1))
+        dominant_type = _normalize_unit_type(row.get("dominant_unit_type", "M"))
         rent_rate = float(np.clip(_safe_float(row.get("rent_rate"), 0.3), 0.0, 1.0))
         resident_population = max(1, int(round(n_households * float(residents_per_household))))
-        community_price = _safe_float(row.get("房价（元/平）"), price_median)
+        community_price = _safe_float(row.get("house_price_rmb_sqm"), price_median)
         income_scale = (community_price / max(price_median, 1.0)) ** INCOME_PRICE_ELASTICITY
         income_scale = float(np.clip(income_scale, *INCOME_SCALE_CLIP))
 

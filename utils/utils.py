@@ -18,19 +18,54 @@ from pathlib import Path
 from datetime import datetime
 
 COMMUNITY_COLUMN_ALIASES = {
-    "community": "小区",
-    "building_type": "建筑类型",
-    "tenure_category": "权属类别",
-    "building_quality": "建筑质量",
-    "build_year": "建成年代",
-    "comment_count": "留言数量",
-    "greening_rate": "绿化率",
-    "residual_far": "剩余容积率",
-    "potential_score": "潜力得分",
-    "house_price_rmb_sqm": "房价（元/平）",
-    "far": "容积率",
-    "household_count": "户数",
-    "parking": "停车位",
+    # Public template schema follows the README fields exactly. Internally,
+    # columns are normalized to snake_case names used by the simulation code.
+    "community": "community_name",
+    "community_name": "community_name",
+    "dominant unit type": "dominant_unit_type",
+    "dominant_unit_type": "dominant_unit_type",
+    "building_type": "building_type",
+    "tenure_category": "tenure_category",
+    "building_quality": "building_quality",
+    "build_year": "build_year",
+    "comment_count": "comment_count",
+    "greening_rate": "greening_rate",
+    "residual_far": "residual_far",
+    "potential_score": "potential_score",
+    "house_price_rmb_sqm": "house_price_rmb_sqm",
+    "far": "far",
+    "household_count": "household_count",
+    "parking": "parking",
+    "rent_rate": "rent_rate",
+    "area": "area",
+    "parking_price": "parking_price",
+    "parking_slots_per_capita": "parking_slots_per_capita",
+    "nearby_max_price": "nearby_max_price",
+    "community_id": "community_id",
+    "clinic": "clinic",
+    "general_hospital": "general_hospital",
+    "leisure": "leisure",
+    "metro_station": "metro_station",
+    "park_square": "park_square",
+    "restaurant": "restaurant",
+    "school": "school",
+    "shopping": "shopping",
+    "sports_facility": "sports_facility",
+    # Legacy Chinese columns are still accepted for backward compatibility.
+    "小区": "community_name",
+    "小区名称": "community_name",
+    "建筑类型": "building_type",
+    "权属类别": "tenure_category",
+    "建筑质量": "building_quality",
+    "建成年代": "build_year",
+    "留言数量": "comment_count",
+    "绿化率": "greening_rate",
+    "剩余容积率": "residual_far",
+    "潜力得分": "potential_score",
+    "房价（元/平）": "house_price_rmb_sqm",
+    "容积率": "far",
+    "户数": "household_count",
+    "停车位": "parking",
 }
 
 DEFAULT_PUBLIC_SERVICE_PROJECTS = [
@@ -47,7 +82,7 @@ def normalize_community_df_columns(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     rename_map = {
         src: dst for src, dst in COMMUNITY_COLUMN_ALIASES.items()
-        if src in df.columns and dst not in df.columns
+        if src in df.columns and src != dst and dst not in df.columns
     }
     if rename_map:
         df = df.rename(columns=rename_map)
@@ -419,17 +454,17 @@ def get_required_agree_ratio(build_year, cfg):
 def get_community_stats(comm_df, extension_ratio, cfg):
 
     comm_df = comm_df.copy()
-    comm_df['小区'] = comm_df['小区'].astype(str).str.strip()
+    comm_df['community_name'] = comm_df['community_name'].astype(str).str.strip()
 
     current_year = 2026
     stats = {}
 
     for _, row in comm_df.iterrows():
-        name = row['小区']
+        name = row['community_name']
 
         lot_area = float(row['area'])
-        far = float(row['容积率'])
-        build_year = int(row['建成年代'])
+        far = float(row['far'])
+        build_year = int(row['build_year'])
         parking_slots_per_capita = row['parking_slots_per_capita']
         total_existing_area = lot_area * far
 
@@ -444,7 +479,7 @@ def get_community_stats(comm_df, extension_ratio, cfg):
             "max_expandable_area": max_expandable_area,
             "extension_ratio":extension_ratio,
             "total_existing_area": total_existing_area,
-            "current_price": float(row['房价（元/平）']),
+            "current_price": float(row['house_price_rmb_sqm']),
             "build_year": build_year,
             "parking_slots_per_capita":parking_slots_per_capita,
             "building_age": current_year - build_year,
@@ -461,19 +496,19 @@ def build_community_context(
     comm_row: pd.Series,
 ) -> str:
 
-    build_year = comm_info.get("建成年代") or comm_info.get("build_year", "unknown")
+    build_year = comm_info.get("build_year", "unknown")
     parking_slots_per_capita = comm_info.get("parking_slots_per_capita", "unknown")
     current_price = comm_info.get("current_price")
     building_quality = None
-    if "建筑质量" in comm_row:
+    if "building_quality" in comm_row:
         try:
-            building_quality = float(comm_row["建筑质量"])
+            building_quality = float(comm_row["building_quality"])
         except Exception:
             building_quality = None
 
-    if current_price is None and "房价（元/平）" in comm_row:
+    if current_price is None and "house_price_rmb_sqm" in comm_row:
         try:
-            current_price = float(comm_row["房价（元/平）"])
+            current_price = float(comm_row["house_price_rmb_sqm"])
         except Exception:
             current_price = None
 

@@ -32,10 +32,13 @@ def _phase2_missing_page(phase2_root: str, embedded: bool = False) -> str:
     return _html_shell("Policy Comparison Data Not Found", body, embedded=embedded)
 
 
-def _file_url(path: str | None) -> str | None:
+def _file_url(path: str | None, filename: str | None = None) -> str | None:
     if not path:
         return None
-    return f"/local-file?{urlencode({'path': path})}"
+    params = {"path": path}
+    if filename:
+        params["filename"] = filename
+    return f"/local-file?{urlencode(params)}"
 
 
 def _build_phase2_global_page(
@@ -756,9 +759,12 @@ def _build_preview_global_page(
     boundary_path: str | None,
 ) -> str:
     community_df = _read_table(community_csv_path)
+    community_col = "community_name" if "community_name" in community_df.columns else ("community" if "community" in community_df.columns else None)
+    if community_col is None:
+        raise KeyError("Community CSV must contain a `community` column. Legacy `community_name` is also accepted.")
     summary_df = pd.DataFrame(
         {
-            "community_name": community_df["小区"].astype(str).str.strip(),
+            "community_name": community_df[community_col].astype(str).str.strip(),
             "final_agree_ratio": np.nan,
             "avg_extension_ratio": np.nan,
             "avg_subsidy_ratio": np.nan,
@@ -1466,7 +1472,13 @@ def _build_phase2_compare_page(
             {'<input type="hidden" name="embedded" value="1" />' if embedded else ''}
             <input type="hidden" name="mode" value="{html.escape(mode)}" />
             <input type="hidden" name="evaluation" value="{html.escape(evaluation)}" />
-            <input type="hidden" name="phase2_root" value="{html.escape(phase2_root)}" />
+            <div class="compare-sidebar-section">
+              <div class="compare-sidebar-label">Result Directory</div>
+              <label>Experiment Result Directory
+                <input type="text" name="phase2_root" value="{html.escape(phase2_root)}" title="{html.escape(phase2_root)}" />
+              </label>
+              <div class="compare-source-path" title="{html.escape(phase2_root)}">Only results under <code>{html.escape(_display_path(phase2_root))}</code> are included.</div>
+            </div>
             {weighted_panel_html}
             <div class="compare-sidebar-section">
               <div class="compare-sidebar-label">Policies</div>
@@ -4226,7 +4238,7 @@ def _build_run_setup_page(embedded: bool = False) -> str:
         </div>
         <div class="step-card-footer">
         <div class="template-download-row">
-          <a id="template-link" class="button action-secondary" href="#" download>Download template</a>
+          <a id="template-link" class="button action-secondary" href="#" download="community_csv_template.xlsx">Download template</a>
           <span class="run-inline-note">Use the template if you want to prepare a new community input file.</span>
         </div>
         </div>
@@ -5228,6 +5240,7 @@ const runSetupState = {{
         const tmpl = document.getElementById('template-link');
         if (tmpl && d.template_url) {{
           tmpl.href = d.template_url;
+          tmpl.setAttribute('download', 'community_csv_template.xlsx');
         }}
 
         const req = document.getElementById('required-columns-html');

@@ -16,7 +16,7 @@ The code framework is inspired by [Miracle1207/EconGym](https://github.com/Mirac
 2. [Agent Framework Setup](#2-agent-framework-setup)
 3. [Quick Start](#3-quick-start)
 4. [Current Web Workflow](#4-current-web-workflow)
-5. [Installation and API Setup](#5-installation-and-api-setup)
+5. [LLM API configuration](#5-llm-api-configuration)
 6. [Input Preparation](#6-input-preparation)
 7. [Upload & Run Workflow](#7-upload--run-workflow)
 8. [Simulation Outputs](#8-simulation-outputs)
@@ -54,100 +54,6 @@ CoRenew defines three agent types: residents, developer, and planner. Each agent
 
 ## 3. Quick Start
 
-From the project root:
-
-```bash
-cd CoRenew
-bash run_local.sh
-```
-
-Then open:
-
-```text
-http://127.0.0.1:7860/run/setup
-```
-
-You can also start the app directly:
-
-```bash
-python ui_app.py --home-path /run/setup
-```
-
-The default local workflow is:
-
-```text
-Upload & Run
-→ prepare or load resident CSVs
-→ configure simulation settings
-→ launch simulations
-→ inspect maps and results
-→ compare policies
-```
-
----
-
-## 4. Current Web Workflow
-
-The current web interface has three top-level pages:
-
-```text
-Upload & Run
-Experiment Results Analysis
-Policy Comparison
-```
-
-### Upload & Run
-![Upload and Run page](./page1.png)
-This is the main operation page. It is organized into four cards:
-
-```text
-Step 1  Input
-Step 2  Prepare CSVs
-Step 3  Configure
-Step 4  Launch
-```
-
-The workflow is intentionally linear:
-
-```text
-Step 1: provide community and boundary inputs
-Step 2: generate or load Residents CSV and Representatives CSV
-Step 3: configure target communities, model, policy caps, and output directory
-Step 4: launch simulations and write outputs
-```
-
-### Experiment Results Analysis
-![Experiment Results Analysis page](./page2.png)
-This page visualizes community-level results on a map. It reads result files from `output/ui_runs` by default and joins community-level outcomes to a boundary shapefile.
-
-The visualization unit is:
-
-```text
-one community under one policy rule
-```
-
-If repeated runs exist for the same community and policy rule, they are averaged before visualization.
-
-Each community on the map can be clicked to inspect detailed negotiation information.
-![Community Negotiation Details page](./page3.png)
-### Policy Comparison
-![Policy Comparison page](./page4.png)
-This page compares policy rules across selected communities.
-
-The comparison unit is:
-
-```text
-one policy rule averaged across all selected communities
-```
-
-Each point in the Pareto scatter represents one policy rule. It is not a raw run and not a single community. The multi-objective ranking and heatmap use the same rule-level averages.
-
----
-
-## 5. Installation and API Setup
-
-### 5.1 Environment installation
-
 A Conda environment is recommended because CoRenew uses geospatial packages such as GeoPandas and Shapely:
 
 ```bash
@@ -174,7 +80,80 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 5.2 LLM API configuration
+From the project root:
+
+```bash
+cd CoRenew
+bash run_local.sh
+```
+
+Then open:
+
+```text
+http://127.0.0.1:7860/run/setup
+```
+
+You can also start the app directly:
+
+```bash
+python ui_app.py --home-path /run/setup
+```
+---
+
+## 4. Current Web Workflow
+
+The current web interface has three top-level pages:
+
+```text
+Upload & Run
+Experiment Results Analysis
+Policy Comparison
+```
+
+### Upload & Run
+![Upload and Run page](./page1.png)
+
+This is the main operation page, organized into four cards:
+
+1. **Step 1: Upload inputs**  
+   Provide the community CSV and boundary file. Use `community_csv_template.xlsx` as the required CSV format reference.
+
+2. **Step 2: Prepare agents**  
+   Generate or load the Residents CSV and Representatives CSV.
+
+3. **Step 3: Configure run settings**  
+   Select target communities, model settings, policy caps, and the output directory.
+
+4. **Step 4: Run simulations**  
+   Launch simulations and write outputs.
+
+### Experiment Results Analysis
+
+![Experiment Results Analysis page](./page2.png)
+
+This page visualizes community-level experiment results on a map. By default, it reads result files from `output/ui_runs`. If you want to analyze a newly generated experiment, update the **Experiment Result Directory** to match the result root specified in **Step 3** on the **Upload & Run** page. The page joins community-level outcomes with the uploaded boundary shapefile.
+
+The visualization unit is **one community under one policy rule**. If repeated runs exist for the same community and policy rule, their results are averaged before visualization.
+
+Each community on the map can be clicked to inspect detailed negotiation information.
+
+![Community Negotiation Details page](./page3.png)
+
+### Policy Comparison
+
+![Policy Comparison page](./page4.png)
+
+This page compares policy rules across selected communities. By default, it reads result files from `output/ui_runs`. If you want to compare results from a newly generated experiment, update the **Experiment Result Directory** to match the result root specified in **Step 3** on the **Upload & Run** page.
+
+The comparison unit is:
+
+```text
+one policy rule averaged across all selected communities
+```
+
+Each point in the Pareto trade-off scatter represents one policy rule. It is not a raw run and not a single community. The multi-objective ranking and heatmap are also computed from the same rule-level averages.
+
+## 5. LLM API configuration
 
 CoRenew uses an OpenAI-compatible Chat Completions interface for LLM-based agents. Before running simulations with LLM agents, users need to provide three items:
 
@@ -283,16 +262,7 @@ The boundary file is optional for running simulations, but required for reliable
 data/geodata/residential_area_huadu.shp
 ```
 
-A shapefile bundle should include at least:
-
-```text
-.shp
-.shx
-.dbf
-.prj
-```
-
-The bundled boundary file has been reduced to the 11 demo communities and keeps only the matching field required by the UI (`community`) plus geometry. Uploaded boundaries may use any supported community-name field, such as `community`, `community_name`, `name`, `小区`, or `小区名称`.
+The bundled boundary file has been reduced to the 11 demo communities and keeps only the matching field required by the UI (`community`) plus geometry. Uploaded boundaries may use any supported community-name field, such as `community`.
 
 ### 6.3 Residents CSV and Representatives CSV
 
@@ -400,8 +370,6 @@ data/agents_by_community/ALL_agents.csv
 data/agents_by_community/community_representatives_list.csv
 ```
 
-The `CSV save directory` field is a text input. The current UI does not include a directory Browse button for this field.
-
 #### Mode B: Load existing agents
 
 Use this mode when the two CSVs already exist.
@@ -487,7 +455,6 @@ Default output directory:
 output/ui_runs
 ```
 
-The `Output Directory` field is a text input. The current UI does not include a directory Browse button for this field.
 
 #### Advanced settings in Step 3
 
